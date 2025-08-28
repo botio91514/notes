@@ -2,6 +2,12 @@
 
 A modern, feature-rich notes application built with React, TypeScript, and AI integration. Create, edit, and manage your notes with powerful AI features, encryption, and a beautiful responsive interface.
 
+## 🌐 Live Demo
+
+**[🚀 Try Power Notes Live](https://nextgennotes.netlify.app/)**
+
+Experience all the features in action on our hosted demo!
+
 ## ✨ Features
 
 ### 🎯 Core Functionality
