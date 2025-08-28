@@ -15,6 +15,7 @@ import {
   ListOrdered
 } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
+// AI actions are handled from AI Tools now; inline imports removed
 
 interface RichTextEditorProps {
   content: string;
@@ -33,7 +34,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [currentColor, setCurrentColor] = useState('#000000');
   const [fontSize, setFontSize] = useState(16);
-  const [fontFamily, setFontFamily] = useState('Inter');
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [localToast, setLocalToast] = useState<{ id: number; text: string } | null>(null);
+
+  // Helper will be inlined in handlers; previous memoized version removed
 
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== content) {
@@ -89,191 +93,231 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     setShowColorPicker(false);
   };
 
-  const applyHighlight = (color: string) => {
-    execCommand('hiliteColor', color);
+  // applyHighlight unused
+
+  // Remove existing AI markup helpers
+  const clearAIHighlights = () => {
+    if (!editorRef.current) return;
+    const container = editorRef.current;
+    const selectors = ['span[data-glossary]', 'span[data-grammar]'];
+    selectors.forEach(sel => {
+      container.querySelectorAll(sel).forEach((el) => {
+        const span = el as HTMLSpanElement;
+        const parent = span.parentNode;
+        if (!parent) return;
+        while (span.firstChild) parent.insertBefore(span.firstChild, span);
+        parent.removeChild(span);
+      });
+    });
   };
 
-  return (
-    <div className={`relative ${className}`}>
-      {/* Floating Toolbar */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="sticky top-2 z-10 mb-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg p-2"
-      >
-        <div className="flex flex-wrap items-center gap-1">
-          {/* Text Formatting */}
-          <div className="flex items-center gap-1 border-r border-gray-300 dark:border-gray-600 pr-2 mr-2">
-            <button
-              onClick={() => execCommand('bold')}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Bold (Cmd+B)"
-            >
-              <Bold size={16} />
-            </button>
-            <button
-              onClick={() => execCommand('italic')}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Italic (Cmd+I)"
-            >
-              <Italic size={16} />
-            </button>
-            <button
-              onClick={() => execCommand('underline')}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Underline (Cmd+U)"
-            >
-              <Underline size={16} />
-            </button>
-            <button
-              onClick={() => execCommand('strikeThrough')}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Strikethrough"
-            >
-              <Strikethrough size={16} />
-            </button>
-          </div>
+  const clearGlossaryHighlights = () => {
+    if (!editorRef.current) return;
+    editorRef.current.querySelectorAll('span[data-glossary]')?.forEach((el) => {
+      const span = el as HTMLSpanElement;
+      const parent = span.parentNode; if (!parent) return;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    });
+  };
 
-          {/* Headings */}
-          <div className="flex items-center gap-1 border-r border-gray-300 dark:border-gray-600 pr-2 mr-2">
-            <select
-              onChange={(e) => setHeading(parseInt(e.target.value))}
-              className="px-2 py-1 rounded-lg bg-transparent border-none text-sm focus:ring-2 focus:ring-indigo-500 max-w-[110px]"
+  const clearGrammarHighlights = () => {
+    if (!editorRef.current) return;
+    editorRef.current.querySelectorAll('span[data-grammar]')?.forEach((el) => {
+      const span = el as HTMLSpanElement;
+      const parent = span.parentNode; if (!parent) return;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    });
+  };
+
+  // Wrap occurrences of a target string in text nodes under root
+  const wrapOccurrences = (root: Node, target: string, wrapperClass: string, attrs: Record<string, string>) => {
+    if (!target) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = node as Text;
+      if (t.nodeValue && t.nodeValue.toLowerCase().includes(target.toLowerCase())) textNodes.push(t);
+    }
+    textNodes.forEach((textNode) => {
+      const value = textNode.nodeValue || '';
+      const index = value.toLowerCase().indexOf(target.toLowerCase());
+      if (index === -1) return;
+      const before = value.slice(0, index);
+      const match = value.slice(index, index + target.length);
+      const after = value.slice(index + target.length);
+      const span = document.createElement('span');
+      span.className = `${wrapperClass} ai-flash`;
+      Object.entries(attrs).forEach(([k, v]) => span.setAttribute(k, v));
+      span.textContent = match;
+      const frag = document.createDocumentFragment();
+      if (before) frag.appendChild(document.createTextNode(before));
+      frag.appendChild(span);
+      if (after) frag.appendChild(document.createTextNode(after));
+      textNode.replaceWith(frag);
+    });
+  };
+
+  // Disable automatic analysis; actions run only on button click
+
+  // Tooltip handlers
+  useEffect(() => {
+    const onMouseOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      const def = target.getAttribute('data-glossary') || target.getAttribute('data-grammar');
+      if (def) {
+        setTooltip({ x: e.clientX + 12, y: e.clientY + 12, text: def });
+      } else {
+        setTooltip(null);
+      }
+    };
+    const onScroll = () => setTooltip(null);
+    const root = editorRef.current;
+    if (!root) return;
+    root.addEventListener('mousemove', onMouseOver);
+    root.addEventListener('mouseleave', () => setTooltip(null));
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      root && root.removeEventListener('mousemove', onMouseOver);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-t-xl p-3 mb-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Text Formatting */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => document.execCommand('bold')}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Bold"
             >
-              <option value="">Heading</option>
-              <option value="1">H1</option>
-              <option value="2">H2</option>
-              <option value="3">H3</option>
-            </select>
+              <strong>B</strong>
+            </button>
+            <button
+              onClick={() => document.execCommand('italic')}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Italic"
+            >
+              <em>I</em>
+            </button>
+            <button
+              onClick={() => document.execCommand('underline')}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Underline"
+            >
+              <u>U</u>
+            </button>
           </div>
 
           {/* Alignment */}
-          <div className="flex items-center gap-1 border-r border-gray-300 dark:border-gray-600 pr-2 mr-2">
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setAlignment('left')}
+              onClick={() => document.execCommand('justifyLeft')}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Align Left"
             >
-              <AlignLeft size={16} />
+              <span className="text-sm">⫷</span>
             </button>
             <button
-              onClick={() => setAlignment('center')}
+              onClick={() => document.execCommand('justifyCenter')}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Align Center"
             >
-              <AlignCenter size={16} />
+              <span className="text-sm">⫸</span>
             </button>
             <button
-              onClick={() => setAlignment('right')}
+              onClick={() => document.execCommand('justifyRight')}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Align Right"
             >
-              <AlignRight size={16} />
-            </button>
-            <button
-              onClick={() => setAlignment('justify')}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Justify"
-            >
-              <AlignJustify size={16} />
+              <span className="text-sm">⫹</span>
             </button>
           </div>
 
           {/* Lists */}
-          <div className="flex items-center gap-1 border-r border-gray-300 dark:border-gray-600 pr-2 mr-2">
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => execCommand('insertUnorderedList')}
+              onClick={() => document.execCommand('insertUnorderedList')}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Bullet List"
             >
-              <List size={16} />
+              <span className="text-sm">•</span>
             </button>
             <button
-              onClick={() => execCommand('insertOrderedList')}
+              onClick={() => document.execCommand('insertOrderedList')}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Numbered List"
             >
-              <ListOrdered size={16} />
+              <span className="text-sm">1.</span>
             </button>
-          </div>
-
-          {/* Color Picker */}
-          <div className="relative flex items-center gap-1">
-            <button
-              onClick={() => setShowColorPicker(!showColorPicker)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Text Color"
-            >
-              <Palette size={16} />
-            </button>
-            
-            {showColorPicker && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="absolute top-12 left-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 z-20 max-w-[220px]"
-              >
-                <div className="grid grid-cols-6 gap-2 mb-3">
-                  {[
-                    '#000000', '#DC2626', '#EA580C', '#D97706', '#65A30D', '#059669',
-                    '#0891B2', '#2563EB', '#7C3AED', '#C026D3', '#BE185D', '#6B7280'
-                  ].map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => applyColor(color)}
-                      className="w-8 h-8 rounded-full border-2 border-gray-300 hover:scale-110 transition-transform"
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-                <input
-                  type="color"
-                  value={currentColor}
-                  onChange={(e) => applyColor(e.target.value)}
-                  className="w-full h-8 rounded cursor-pointer"
-                />
-              </motion.div>
-            )}
           </div>
 
           {/* Font Size */}
           <div className="flex items-center gap-1">
-            <Type size={16} />
             <select
               value={fontSize}
-              onChange={(e) => setFontSize(parseInt(e.target.value))}
-              className="px-2 py-1 rounded-lg bg-transparent border-none text-sm focus:ring-2 focus:ring-indigo-500"
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
-              {[12, 14, 16, 18, 20, 24, 28, 32].map(size => (
-                <option key={size} value={size}>{size}px</option>
-              ))}
+              <option value={12}>12px</option>
+              <option value={14}>14px</option>
+              <option value={16}>16px</option>
+              <option value={18}>18px</option>
+              <option value={20}>20px</option>
+              <option value={24}>24px</option>
+              <option value={28}>28px</option>
+              <option value={32}>32px</option>
             </select>
           </div>
+
+          {/* Color Picker */}
+          <div className="flex items-center gap-1">
+            <input
+              type="color"
+              value={currentColor}
+              onChange={(e) => applyColor(e.target.value)}
+              className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-transparent"
+              title="Text Color"
+            />
+          </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Editor */}
-      <div
-        ref={editorRef}
-        contentEditable
-        onInput={handleInput}
-        className={`
-          min-h-[400px] p-6 rounded-xl border border-gray-200 dark:border-gray-700 
-          bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 
-          prose prose-lg max-w-none dark:prose-invert
-        `}
-        style={{ fontSize: `${fontSize}px`, fontFamily }}
-        data-placeholder={placeholder}
-      />
-      
-      <style>{`
-        [contenteditable]:empty:before {
-          content: attr(data-placeholder);
-          color: #9CA3AF;
-          pointer-events: none;
-        }
-      `}</style>
+      <div className="flex-1">
+        <div
+          ref={editorRef}
+          contentEditable
+          onInput={handleInput}
+          className={`
+            min-h-[400px] p-6 rounded-xl border border-gray-200 dark:border-gray-700 
+            bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 
+            prose prose-lg max-w-none dark:prose-invert
+          `}
+          style={{ fontSize: `${fontSize}px`, fontFamily: 'Inter', color: currentColor }}
+          data-placeholder={placeholder}
+        />
+      </div>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm shadow-lg max-w-xs"
+          style={{
+            left: tooltip.x,
+            top: tooltip.y - 40
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 };

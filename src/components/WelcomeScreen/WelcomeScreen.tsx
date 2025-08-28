@@ -346,20 +346,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           </motion.div>
         </motion.div>
 
-        {/* Keyboard shortcuts hint */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8, delay: 1.2 }}
-          className="mt-8 text-sm text-gray-500 dark:text-gray-400"
-        >
-          <p className="mb-2">Quick start with keyboard shortcuts:</p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg font-mono">⌘+N</span>
-            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg font-mono">⌘+K</span>
-            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg font-mono">⌘+S</span>
-          </div>
-        </motion.div>
+        {/* Keyboard shortcuts hint removed */}
       </div>
     </div>
   );

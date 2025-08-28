@@ -127,15 +127,27 @@ export class AIService {
   }
 
   static async checkGrammar(text: string): Promise<any[]> {
-    // Mock grammar suggestions for demonstration
-    return [
-      {
-        text: 'teh',
-        suggestion: 'the',
-        position: { start: 0, end: 3 },
-        type: 'spelling'
-      }
-    ];
+    if (!text.trim()) return [];
+    try {
+      const data = await this.requestGemini({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: 'Find grammar/spelling issues in this text. Return a compact JSON array of objects with fields: text (string), suggestion (string). No extra text.' },
+              { text }
+            ]
+          }
+        ]
+      });
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((i: any) => i?.text && i?.suggestion);
+      return [];
+    } catch {
+      // Fallback tiny heuristic for common typo
+      return text.includes('teh') ? [{ text: 'teh', suggestion: 'the' }] : [];
+    }
   }
 
   static async getGlossaryTerms(text: string): Promise<any[]> {
@@ -146,5 +158,26 @@ export class AIService {
       definition: `Definition for ${term}`,
       position: { start: text.indexOf(term), end: text.indexOf(term) + term.length }
     })).filter(term => term.position.start !== -1);
+  }
+
+  static async getInsights(text: string): Promise<string[]> {
+    if (!text.trim()) return [];
+    try {
+      const data = await this.requestGemini({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: 'Extract 3-5 actionable insights or key points from the text. Return each as a bullet sentence.' },
+              { text }
+            ]
+          }
+        ]
+      });
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return raw.split(/\n|-\s+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0).slice(0,5);
+    } catch {
+      return [];
+    }
   }
 }

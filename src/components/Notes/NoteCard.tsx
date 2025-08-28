@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { 
   Pin, 
@@ -33,8 +34,10 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   isSelected = false
 }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [showDecryptModal, setShowDecryptModal] = useState(false);
   const [password, setPassword] = useState('');
   const [decryptError, setDecryptError] = useState('');
@@ -61,7 +64,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     }).format(new Date(date));
   };
 
-  // Close menu on outside click
+  // Close menu on outside click / scroll / resize
   useEffect(() => {
     if (!showMenu) return;
 
@@ -74,9 +77,17 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         setShowMenu(false);
       }
     };
+    const handleScroll = () => setShowMenu(false);
+    const handleResize = () => setShowMenu(false);
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [showMenu]);
 
   return (
@@ -89,7 +100,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         whileHover={{ y: -2, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
         className={`
           relative group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 
-          p-6 cursor-pointer transition-all duration-200 hover:border-indigo-300 dark:hover:border-indigo-600
+          p-4 md:p-6 cursor-pointer transition-all duration-200 hover:border-indigo-300 dark:hover:border-indigo-600
           ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-300' : ''}
         `}
         ref={cardRef}
@@ -115,8 +126,18 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           
           <div className="relative">
             <button
+              ref={menuBtnRef}
               onClick={(e) => {
                 e.stopPropagation();
+                // Compute fixed position near the button to avoid clipping/overlap issues
+                const rect = menuBtnRef.current?.getBoundingClientRect();
+                if (rect) {
+                  const estimatedWidth = 220;
+                  setMenuPos({
+                    top: Math.min(window.innerHeight - 8, rect.bottom + 8),
+                    left: Math.max(8, Math.min(rect.right - estimatedWidth, window.innerWidth - estimatedWidth - 8))
+                  });
+                }
                 setShowMenu(!showMenu);
               }}
               className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
@@ -124,12 +145,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               <MoreVertical size={16} />
             </button>
 
-            {showMenu && (
+            {showMenu && createPortal(
               <motion.div
-                initial={{ opacity: 0, scale: 0.98, y: 4 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.98, y: 4 }}
-                className="absolute right-0 top-8 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-2 z-50 min-w-[200px]"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                className="fixed bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 py-2 z-[9999] min-w-[240px]"
+                style={{ top: menuPos.top, left: menuPos.left }}
                 ref={menuRef}
               >
                 {note.isEncrypted && (
@@ -179,7 +201,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                   <Trash2 size={14} />
                   Delete
                 </button>
-              </motion.div>
+              </motion.div>,
+              document.body
             )}
           </div>
         </div>
@@ -190,7 +213,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             {note.aiSummary && (
               <div className="flex items-start gap-2 mb-3 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
                 <Sparkles size={16} className="text-indigo-500 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">
+                <p className="text-sm text-indigo-700 dark:text-indigo-300 font-medium line-clamp-2" title={note.aiSummary}>
                   {note.aiSummary}
                 </p>
               </div>

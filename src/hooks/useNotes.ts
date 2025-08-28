@@ -86,9 +86,9 @@ export const useNotes = () => {
   };
 
   // Manual AI refresh triggered by user; includes simple throttle
-  type RefreshStatus = 'success' | 'throttled' | 'error';
+  type RefreshStatus = 'success' | 'throttled' | 'error' | 'empty';
 
-  const refreshAIFeatures = async (id: string): Promise<RefreshStatus> => {
+  const refreshAIFeatures = async (id: string, contentOverride?: string): Promise<RefreshStatus> => {
     const note = await db.notes.get(id);
     if (!note) return 'error';
     const now = Date.now();
@@ -96,9 +96,11 @@ export const useNotes = () => {
     if (now - lastAIFeatureUpdateAt < THROTTLE_WINDOW_MS) return 'throttled';
 
     try {
+      const sourceContent = (contentOverride ?? note.content ?? '').trim();
+      if (!sourceContent) return 'empty';
       const [summary, tags] = await Promise.all([
-        AIService.generateSummary(note.content || ''),
-        AIService.generateTags(note.content || '')
+        AIService.generateSummary(sourceContent),
+        AIService.generateTags(sourceContent)
       ]);
       await db.notes.update(id, { aiSummary: summary, tags });
       setLastAIFeatureUpdateAt(now);
@@ -108,16 +110,6 @@ export const useNotes = () => {
       console.warn('AI refresh failed:', error);
       return 'error';
     }
-  };
-
-  const exportNotes = async (): Promise<Blob> => {
-    const all = await db.notes.toArray();
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      notes: all
-    };
-    const json = JSON.stringify(payload, null, 2);
-    return new Blob([json], { type: 'application/json' });
   };
 
   const importNotes = async (file: File): Promise<{ imported: number; skipped: number }> => {
@@ -227,7 +219,6 @@ export const useNotes = () => {
     decryptNote,
     loadNotes,
     refreshAIFeatures,
-    exportNotes,
     importNotes
   };
 };

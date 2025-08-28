@@ -38,7 +38,6 @@ function App() {
     encryptNote,
     decryptNote,
     refreshAIFeatures,
-    exportNotes,
     importNotes
   } = useNotes();
 
@@ -61,9 +60,10 @@ function App() {
   const [lastTranslatedContent, setLastTranslatedContent] = useState<string | null>(null);
   const [translateError, setTranslateError] = useState<string>('');
   const [showAITools, setShowAITools] = useState(false);
-  const [aiActionLoading, setAiActionLoading] = useState<null | 'summarize' | 'translate' | 'grammar' | 'glossary'>(null);
+  const [aiActionLoading, setAiActionLoading] = useState<null | 'summarize' | 'translate' | 'grammar' | 'glossary' | 'insights'>(null);
   const [grammarSuggestions, setGrammarSuggestions] = useState<any[]>([]);
   const [glossaryTerms, setGlossaryTerms] = useState<any[]>([]);
+  const [insights, setInsights] = useState<string[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
   const [lastSavedTitle, setLastSavedTitle] = useState('');
@@ -278,7 +278,7 @@ function App() {
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
-      className="h-screen flex flex-col md:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white overflow-hidden"
+      className="h-screen flex flex-col md:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
     >
       {/* Sidebar */}
       <Sidebar
@@ -303,226 +303,185 @@ function App() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden min-h-[50vh] md:min-h-0">
-        {selectedNoteId && currentNote ? (
-          <>
-            {/* Editor Header */}
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
-            >
-              <div className="flex items-center gap-4 flex-1">
-                <input
-                  type="text"
-                  value={noteTitle}
-                  onChange={(e) => setNoteTitle(e.target.value)}
-                  className="text-2xl font-bold bg-transparent border-none outline-none flex-1 placeholder-gray-400"
-                  placeholder="Untitled Note"
-                />
-                
-                <div className="min-w-[140px] flex items-center justify-end">
-                  {isSaving ? (
+      <div className="flex-1 flex flex-col">
+        {/* Editor Header */}
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            {/* Title Input */}
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder="Note title..."
+                className="w-full text-2xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {/* Save Status */}
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                {isSaving ? (
+                  <>
                     <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex items-center gap-2 text-sm text-gray-500"
-                    >
-                      <Save size={16} className="animate-pulse" />
-                      Saving...
-                    </motion.div>
-                  ) : hasUnsavedChanges ? (
-                    <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                      <AlertCircle size={16} />
-                      Unsaved changes
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                      <CheckCircle2 size={16} />
-                      Saved
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowEncryptModal(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
-                  title="Encrypt Note"
-                >
-                  {currentNote.isEncrypted ? <Unlock size={16} /> : <Lock size={16} />}
-                  {currentNote.isEncrypted ? 'Encrypted' : 'Encrypt'}
-                </button>
-
-                <button onClick={() => {
-                  const cooling = aiCooldownUntil ? Date.now() < aiCooldownUntil : false;
-                  if (cooling) {
-                    setToast({ type: 'info', message: 'AI Tools cooling down. Please wait.' });
-                    setTimeout(() => setToast(null), 2000);
-                    return;
-                  }
-                  setShowAITools(true);
-                }} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors">
-                  <Sparkles size={16} />
-                  {aiCooldownUntil && Date.now() < aiCooldownUntil ? `AI Tools (${Math.max(0, Math.ceil((aiCooldownUntil - Date.now())/1000))}s)` : 'AI Tools'}
-                </button>
-
-                <button onClick={() => {
-                  const cooling = translateCooldownUntil ? Date.now() < translateCooldownUntil : false;
-                  if (cooling) {
-                    setToast({ type: 'info', message: 'Translate cooling down. Please wait.' });
-                    setTimeout(() => setToast(null), 2000);
-                    return;
-                  }
-                  setShowTranslateModal(true);
-                }} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors">
-                  <Languages size={16} />
-                  {translateCooldownUntil && Date.now() < translateCooldownUntil ? `Translate (${Math.max(0, Math.ceil((translateCooldownUntil - Date.now())/1000))}s)` : 'Translate'}
-                </button>
-
-                {lastTranslatedContent && (
-                  <button
-                    onClick={() => {
-                      if (lastTranslatedContent) {
-                        setEditorContent(lastTranslatedContent);
-                        setLastTranslatedContent(null);
-                      }
-                    }}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                    title="Undo last translation"
-                  >
-                    <History size={16} />
-                    Undo Translate
-                  </button>
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+                    />
+                    <span>Saving...</span>
+                  </>
+                ) : hasUnsavedChanges ? (
+                  <>
+                    <AlertCircle size={16} />
+                    <span>Unsaved</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} className="text-green-500" />
+                    <span>Saved</span>
+                  </>
                 )}
-
-                <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                  <History size={16} />
-                  History
-                </button>
-
-                <button
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-                  onClick={() => {
-                    if (!currentNote) return;
-                    const container = document.createElement('div');
-                    container.innerHTML = editorContent || '';
-                    const plain = container.textContent || '';
-                    const titleSafe = (noteTitle || 'note').replace(/[^a-z0-9\-\_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase();
-                    const filename = `${titleSafe || 'note'}.txt`;
-                    try {
-                      const blob = new Blob([plain], { type: 'text/plain;charset=utf-8' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = filename;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      URL.revokeObjectURL(url);
-                      setToast({ type: 'success', message: 'Exported as .txt' });
-                    } catch {
-                      setToast({ type: 'error', message: 'Export failed' });
-                    } finally {
-                      setTimeout(() => setToast(null), 2000);
-                    }
-                  }}
-                >
-                  <Share2 size={16} />
-                  Export
-                </button>
-
-                
-
-                <label className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
-                  <input type="file" accept="application/json" className="hidden" onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const res = await importNotes(file);
-                      setToast({ type: 'success', message: `Imported ${res.imported}, skipped ${res.skipped}` });
-                    } catch (err) {
-                      setToast({ type: 'error', message: 'Import failed' });
-                    } finally {
-                      setTimeout(() => setToast(null), 2500);
-                      e.currentTarget.value = '';
-                    }
-                  }} />
-                  Import
-                </label>
               </div>
-            </motion.div>
 
-            {/* Editor */}
-            <div className="flex-1 overflow-auto p-4 md:p-6">
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <Menu size={20} />
+              </button>
+
+              {/* AI Tools Button */}
+              <button
+                onClick={() => setShowAITools(true)}
+                disabled={!selectedNoteId || aiCooldownUntil !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Sparkles size={16} />
+                <span>AI Tools</span>
+              </button>
+
+              {/* Translate Button */}
+              <button
+                onClick={() => setShowTranslateModal(true)}
+                disabled={!selectedNoteId || translateCooldownUntil !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-lg hover:from-blue-600 hover:to-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Languages size={16} />
+                <span>Translate</span>
+              </button>
+
+              {/* Encrypt Button */}
+              <button
+                onClick={() => setShowEncryptModal(true)}
+                disabled={!selectedNoteId}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-lg hover:from-amber-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Lock size={16} />
+                <span>Encrypt</span>
+              </button>
+
+              {/* History Button */}
+              <button
+                onClick={() => setShowHistoryModal(true)}
+                disabled={!selectedNoteId}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <History size={16} />
+                <span>History</span>
+              </button>
+
+              {/* Export Button */}
+              <button
+                onClick={() => {
+                  if (!currentNote) return;
+                  const element = document.createElement('a');
+                  const file = new Blob([currentNote.content], { type: 'text/plain' });
+                  element.href = URL.createObjectURL(file);
+                  element.download = `${currentNote.title || 'note'}.txt`;
+                  document.body.appendChild(element);
+                  element.click();
+                  document.body.removeChild(element);
+                  setToast({ type: 'success', message: 'Note exported successfully!' });
+                }}
+                disabled={!selectedNoteId}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Share2 size={16} />
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Editor Content */}
+        <div className="flex-1 overflow-auto p-4">
+          {selectedNoteId ? (
+            <>
+              {/* AI Summary Block */}
+              {currentNote?.aiSummary && (
+                <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <Sparkles size={20} className="text-indigo-500 mt-1 flex-shrink-0" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-2">AI Summary</h3>
+                        <p className="text-indigo-800 dark:text-indigo-200">{currentNote.aiSummary}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!selectedNoteId) return;
+                        setAiActionLoading('summarize');
+                        try {
+                          await refreshAIFeatures(selectedNoteId);
+                          setToast({ type: 'success', message: 'Summary regenerated!' });
+                        } catch (error) {
+                          setToast({ type: 'error', message: 'Failed to regenerate summary' });
+                        } finally {
+                          setAiActionLoading(null);
+                        }
+                      }}
+                      disabled={aiActionLoading === 'summarize'}
+                      className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                    >
+                      {aiActionLoading === 'summarize' ? (
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                        />
+                      ) : (
+                        'Regenerate'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <RichTextEditor
                 content={editorContent}
                 onChange={setEditorContent}
                 placeholder="Start writing your note..."
-                className="h-full"
               />
-            </div>
-          </>
-        ) : (
-          /* Welcome Screen */
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex-1 flex items-center justify-center p-8"
-          >
-            <div className="text-center max-w-md">
-              <motion.div
-                animate={{ 
-                  y: [0, -10, 0],
-                  scale: [1, 1.1, 1]
-                }}
-                transition={{ 
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-                className="w-24 h-24 mx-auto mb-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center"
-              >
-                <Sparkles size={32} className="text-white" />
-              </motion.div>
-              
-              <h2 className="text-3xl font-bold mb-4 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                Welcome to Next-Gen Notes
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
-                Experience the future of note-taking with AI-powered features, 
-                encryption, and beautiful design. Create your first note or 
-                select one from the sidebar to get started.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleCreateNote}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
-                >
-                  <Sparkles size={20} />
-                  Create Your First Note
-                </motion.button>
-                
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setIsCommandPaletteOpen(true)}
-                  className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium flex items-center justify-center gap-2"
-                >
-                  <Menu size={20} />
-                  Open Command Palette
-                </motion.button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
+              <div className="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                <span className="text-4xl">📝</span>
               </div>
-              
-              {/* Keyboard shortcuts hint removed as requested */}
+              <h2 className="text-2xl font-semibold mb-2">No Note Selected</h2>
+              <p className="mb-6">Choose a note from the sidebar or create a new one to get started.</p>
+              <button
+                onClick={handleCreateNote}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg hover:shadow-xl"
+              >
+                Create New Note
+              </button>
             </div>
-          </motion.div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Command Palette */}
@@ -708,14 +667,15 @@ function App() {
                 <button onClick={() => setShowAITools(false)} className="px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">Close</button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
                   onClick={async () => {
                     if (!selectedNoteId) return;
                     setAiActionLoading('summarize');
-                    const status = await refreshAIFeatures(selectedNoteId);
+                    const status = await refreshAIFeatures(selectedNoteId, editorContent);
                     setAiActionLoading(null);
                     if (status === 'success') setToast({ type: 'success', message: 'Summary and tags updated' });
+                    else if (status === 'empty') setToast({ type: 'info', message: 'Nothing to summarize' });
                     else if (status === 'throttled') setToast({ type: 'info', message: 'Please wait before trying again' });
                     else setToast({ type: 'error', message: 'AI service unavailable' });
                     const cooldownMs = status === 'throttled' ? 15_000 : 30_000;
@@ -725,8 +685,19 @@ function App() {
                   className="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
                   disabled={aiActionLoading !== null}
                 >
-                  <div className="font-medium">Summarize + Generate Tags</div>
-                  <div className="text-sm text-gray-500">Create a short summary and smart tags</div>
+                  <div className="flex items-center gap-2">
+                    {aiActionLoading === 'summarize' && (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+                      />
+                    )}
+                    <div>
+                      <div className="font-medium">Summarize + Generate Tags</div>
+                      <div className="text-sm text-gray-500">Create a short summary and smart tags</div>
+                    </div>
+                  </div>
                 </button>
 
                 <button
@@ -745,7 +716,7 @@ function App() {
                   onClick={async () => {
                     setAiActionLoading('grammar');
                     try {
-                      const res = await AIService.checkGrammar(editorContent || '');
+                      const res = await AIService.checkGrammar((editorContent || '').trim());
                       setGrammarSuggestions(res);
                       setToast({ type: 'success', message: `Grammar suggestions: ${res.length}` });
                     } catch {
@@ -758,15 +729,26 @@ function App() {
                   className="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
                   disabled={aiActionLoading !== null}
                 >
-                  <div className="font-medium">Grammar Check</div>
-                  <div className="text-sm text-gray-500">Highlight possible typos and fixes</div>
+                  <div className="flex items-center gap-2">
+                    {aiActionLoading === 'grammar' && (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+                      />
+                    )}
+                    <div>
+                      <div className="font-medium">Grammar Check</div>
+                      <div className="text-sm text-gray-500">Highlight possible typos and fixes</div>
+                    </div>
+                  </div>
                 </button>
 
                 <button
                   onClick={async () => {
                     setAiActionLoading('glossary');
                     try {
-                      const res = await AIService.getGlossaryTerms(editorContent || '');
+                      const res = await AIService.getGlossaryTerms((editorContent || '').trim());
                       setGlossaryTerms(res);
                       setToast({ type: 'success', message: `Found terms: ${res.length}` });
                     } catch {
@@ -779,21 +761,66 @@ function App() {
                   className="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
                   disabled={aiActionLoading !== null}
                 >
-                  <div className="font-medium">Glossary</div>
-                  <div className="text-sm text-gray-500">Extract and define key terms</div>
+                  <div className="flex items-center gap-2">
+                    {aiActionLoading === 'glossary' && (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+                      />
+                    )}
+                    <div>
+                      <div className="font-medium">Glossary</div>
+                      <div className="text-sm text-gray-500">Extract and define key terms</div>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={async () => {
+                    setAiActionLoading('insights');
+                    try {
+                      const res = await AIService.getInsights((editorContent || '').trim());
+                      setInsights(res);
+                      setToast({ type: 'success', message: `Insights: ${res.length}` });
+                    } catch {
+                      setToast({ type: 'error', message: 'Insights failed' });
+                    } finally {
+                      setAiActionLoading(null);
+                      setTimeout(() => setToast(null), 2500);
+                    }
+                  }}
+                  className="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
+                  disabled={aiActionLoading !== null}
+                >
+                  <div className="font-medium">AI Insights</div>
+                  <div className="text-sm text-gray-500">Key points and recommendations</div>
                 </button>
               </div>
 
-              {(grammarSuggestions.length > 0 || glossaryTerms.length > 0) && (
+              {(grammarSuggestions.length > 0 || glossaryTerms.length > 0 || insights.length > 0) && (
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {grammarSuggestions.length > 0 && (
                     <div>
                       <div className="text-sm font-semibold mb-2">Grammar Suggestions</div>
                       <div className="space-y-2 max-h-40 overflow-auto">
                         {grammarSuggestions.map((g, i) => (
-                          <div key={i} className="text-sm p-2 rounded bg-gray-50 dark:bg-gray-700/50">
+                          <button
+                            key={i}
+                            onClick={() => {
+                              if (!g?.text || !g?.suggestion) return;
+                              const before = editorContent;
+                              const after = (before || '').split(g.text).join(g.suggestion);
+                              if (after !== before) {
+                                setEditorContent(after);
+                                setToast({ type: 'success', message: `Replaced “${g.text}” → “${g.suggestion}”` });
+                                setTimeout(() => setToast(null), 2000);
+                              }
+                            }}
+                            className="w-full text-left text-sm p-2 rounded bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-600"
+                          >
                             Replace "{g.text}" with "{g.suggestion}"
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -806,6 +833,19 @@ function App() {
                         {glossaryTerms.map((t, i) => (
                           <div key={i} className="text-sm p-2 rounded bg-gray-50 dark:bg-gray-700/50">
                             <span className="font-medium">{t.term}:</span> {t.definition}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {insights.length > 0 && (
+                    <div>
+                      <div className="text-sm font-semibold mb-2">AI Insights</div>
+                      <div className="space-y-2 max-h-40 overflow-auto">
+                        {insights.map((it, i) => (
+                          <div key={i} className="text-sm p-2 rounded bg-gray-50 dark:bg-gray-700/50">
+                            • {it}
                           </div>
                         ))}
                       </div>
